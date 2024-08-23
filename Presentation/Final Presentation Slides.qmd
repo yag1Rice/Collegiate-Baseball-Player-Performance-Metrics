@@ -1,0 +1,968 @@
+---
+title: "Comparing Baseball Player Performance Metrics: <span style='color:red;'>NCAA Division 1</span> vs. <span style='color:blue;'>Frontier League </span>"
+author: "Zac Ambrose, Robert Cowan, Nathaniel Ascher, Youssef Gehad"
+format: revealjs
+fig-size: 6
+fig-asp: 0.618
+out-width: "70%"
+fig-align: "center"
+server: shiny
+---
+
+```{r, include=FALSE}
+lEval <- TRUE
+set.seed(123)
+library(knitr)
+library(RSQLite)
+library(dplyr)
+library(lubridate)
+library(data.table)
+library(ggplot2)
+library(stargazer)
+library(kableExtra)
+library(vroom)
+library(randomForest)
+library(caTools)
+library(scales)
+library(stringr)
+library(shiny)
+library(plotly)
+library(gridExtra)
+library(tidyr)
+library(broom)
+library(grid)
+dcon <- dbConnect(SQLite(), dbname = "/Users/zacambrose/STAT_405_Module1/baseball.db")
+```
+
+## Problem statement {transition="slide"}
+
+::: {.fragment .fade-in}
+-   MLB teams have many different leagues to scout player talent from
+:::
+
+::: {.fragment .fade-in}
+-   How can professional teams be sure that the players they are acquiring are the best available, regardless of which league they play in?
+:::
+
+## Research question {transition="slide"}
+
+How does player performance differ across leagues?
+
+::: {.fragment .fade-in}
+-   Could help MLB teams properly select talent based on performance in lower leagues
+:::
+
+::: {.fragment .fade-in}
+-   We are looking to answer this question with 2023 data from [NCAA Division 1]{style="color:red;"} teams and the [Frontier League]{style="color:blue;"}, an independent summer league
+:::
+
+::: {.fragment .fade-in}
+-   Access provided for data for the 2023 [NCAA]{style="color:red;"} season by Rice Baseball analytics and 2023 [Frontier League]{style="color:blue;"} season by Nathaniel Ascher
+:::
+
+## How does player performance differ across leagues? {.smaller .scrollable transition="slide"}
+
+::: panel-tabset
+### Text
+
+::: {.fragment .fade-in}
+-   Typically, players in [NCAA]{style="color:red;"} are regarded as better than those in the [Frontier League]{style="color:blue;"}
+:::
+
+::: {.fragment .fade-in}
+-   If one league is "better" on average, we'd expect to see improved player performance metrics
+:::
+
+::: {.fragment .fade-in}
+-   We will focus on pitching metrics, as they are more comparable across leagues
+:::
+
+### [NCAA]{style="color:red;"}
+
+```{r}
+res_ncaa <- dbSendQuery(conn = dcon, "SELECT Date,Time,PitcherThrows,BatterSide,Inning,Outs,Balls,Strikes,TaggedPitchType,AutoPitchType,PitchCall,TaggedHitType,PlayResult,RunsScored,RelSpeed,SpinRate,SpinAxis,Tilt,VertBreak,InducedVertBreak,HorzBreak,ExitSpeed,Angle,Distance,HangTime FROM trackman LIMIT 5")
+ncaa <- dbFetch(res_ncaa, -1)
+dbClearResult(res_ncaa)
+knitr::kable(ncaa)
+```
+
+### [Frontier]{style="color:blue;"}
+
+```{r}
+res_frontier <- dbSendQuery(conn = dcon, "SELECT Date,Time,PitcherThrows,BatterSide,Inning,Outs,Balls,Strikes,TaggedPitchType,AutoPitchType,PitchCall,HitType,PlayResult,RunsScored,RelSpeed,SpinRate,SpinAxis,Tilt,VertBreak,InducedVertBreak,HorzBreak,ExitSpeed,Angle,Distance,HangTime FROM yakkertech LIMIT 5")
+frontier <- dbFetch(res_frontier, -1)
+dbClearResult(res_frontier)
+knitr::kable(frontier)
+```
+:::
+
+## Random forest {transition="slide"}
+
+::: {.fragment .fade-in}
+-   While the [NCAA]{style="color:red;"} data had an auto pitch type, the [Frontier League]{style="color:blue;"} data did not
+:::
+
+::: {.fragment .fade-in}
+-   We used a random forest model to predict the pitch type for the [Frontier League]{style="color:blue;"} data using the distribution of [NCAA]{style="color:red;"} pitch types as the training data
+:::
+
+::: {.fragment .fade-in}
+-   Features for the model included induced vertical break, horizontal break, release speed, spin rate, spin axis, and pitcher's handedness to predict pitch type
+:::
+
+::: {.fragment .fade-in}
+-   Resulted in [96.6%]{style="\"color:green;"} accuracy on the test data
+:::
+
+## Pitch metric definitions {transition="slide"}
+
+::: columns
+::: {.column width="33%"}
+::: {.fragment .fade-in-then-semi-out}
+*Horizontal Break (HB)*
+:::
+
+::: {.fragment .fade-in-then-semi-out}
+*Induced Vertical Break (IVB)*
+:::
+
+::: {.fragment .fade-in}
+![](images/3dplotlegend.png){fig-align="left"}
+:::
+:::
+
+::: {.column width="33%"}
+::: {.fragment .fade-in}
+![Frontier](images/yakkertech3d1-01.png){style="color:blue;"}
+:::
+:::
+
+::: {.column width="33%"}
+::: {.fragment .fade-in}
+![NCAA](images/trackman3d1.png){style="color:red;"}
+:::
+:::
+:::
+
+## Pitch type by inning {.smaller transition="slide"}
+
+```{r pitchcall1, warning=FALSE,eval=lEval}
+res_trackman_barplot <- dbSendQuery(conn = dcon, "
+SELECT AutoPitchType, Inning
+FROM trackman
+")
+trackman_barplot <- dbFetch(res_trackman_barplot, -1)
+dbClearResult(res_trackman_barplot)
+
+trackmanpitchplot <- ggplot(trackman_barplot) + aes(Inning) + geom_bar(aes(fill=AutoPitchType), position = "fill", width = 0.5, na.rm = TRUE) + xlim(0,11) + ggtitle("NCAA") + ylab("Percentage of Pitch Thrown") + labs(caption="Source: trackman") + theme(legend.position = "none",plot.title = element_text(color="red"))
+
+
+rm(trackman_barplot)
+rm(res_trackman_barplot)
+
+res_yakkertech_barplot <- dbSendQuery(conn = dcon, "
+SELECT Inning, AutoPitchType
+FROM yakkertech
+")
+yakkertech_barplot <- dbFetch(res_yakkertech_barplot, -1)
+dbClearResult(res_yakkertech_barplot)
+
+yakkertechpitchplot <- ggplot(yakkertech_barplot) + 
+  aes(Inning) + 
+  geom_bar(aes(fill=AutoPitchType), position = "fill", width = 0.5, na.rm = TRUE) + 
+  xlim(0,11) + 
+  ggtitle("Frontier League") + 
+  ylab("Percentage of Pitch Thrown") + 
+  labs(caption="Source: yakkertech") +
+  theme(plot.title = element_text(color="blue"))
+  
+
+rm(yakkertech_barplot)
+rm(res_yakkertech_barplot)
+
+grid.arrange(trackmanpitchplot, yakkertechpitchplot, ncol=2,widths=c(0.85,1.15))
+
+```
+
+## Release speed by inning {.smaller transition="slide"}
+
+```{r monthly pitch velo ncaa, eval=lEval,fig.cap='Average Pitch Velocity per inning by pitch type',message=F}
+#| warning: FALSE
+res_trackman_timeplot <- dbSendQuery(conn = dcon, "
+SELECT AutoPitchType, Inning, RelSpeed
+FROM trackman
+")
+trackman_timeplot <- dbFetch(res_trackman_timeplot, -1)
+dbClearResult(res_trackman_timeplot)
+
+timeplot_summary <- trackman_timeplot %>%
+  group_by(Inning, AutoPitchType) %>%
+  summarise(MeanRelSpeed = mean(RelSpeed, na.rm = TRUE)) %>%
+  filter(!is.na(AutoPitchType) & !is.na(MeanRelSpeed))
+
+
+timeplot_summary <- timeplot_summary[1:70,]
+
+
+trackman_inningplot <- ggplot(timeplot_summary, aes(x = Inning, y = MeanRelSpeed, col = AutoPitchType)) +
+  geom_point(na.rm = TRUE) +
+  labs(x = "Inning", y = "Mean Release Speed", title = "NCAA", caption = "Source: trackman") +
+  theme_minimal() + 
+  scale_x_continuous(breaks = seq(1, 10)) +
+  geom_line(alpha = 0.25) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),legend.position="none",plot.title = element_text(color="red"))+ 
+  ylim(75,95)
+
+rm(trackman_timeplot)
+rm(timeplot_summary)
+rm(res_trackman_timeplot)
+
+res_yakkertech_timeplot <- dbSendQuery(conn = dcon, "
+SELECT Inning, RelSpeed, AutoPitchType
+FROM yakkertech
+")
+yakkertech_timeplot <- dbFetch(res_yakkertech_timeplot, -1)
+dbClearResult(res_yakkertech_timeplot)
+
+timeplot_summary <- yakkertech_timeplot %>%
+  group_by(Inning, AutoPitchType) %>%
+  summarise(MeanRelSpeed = mean(RelSpeed, na.rm = TRUE)) %>%
+  filter(!is.na(AutoPitchType) & !is.na(MeanRelSpeed))
+
+timeplot_summary <- timeplot_summary[1:70,]
+
+
+yakkertech_inningplot <- ggplot(timeplot_summary, aes(x = Inning, y = MeanRelSpeed, col = AutoPitchType)) +
+  geom_point(na.rm = TRUE) +    
+  labs(x = "Inning", y = "Mean Release Speed", title = "Frontier League", caption = "Source: yakkertech") +
+  theme_minimal() + scale_x_continuous(breaks = seq(1, 10)) + geom_line(alpha = 0.25) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),plot.title = element_text(color="blue"))+ ylim(75,95)
+
+
+
+
+rm(yakkertech_timeplot)
+rm(timeplot_summary)
+rm(res_yakkertech_timeplot)
+grid.arrange(trackman_inningplot, yakkertech_inningplot, ncol=2,widths=c(0.85,1.15))
+```
+
+## Violin plot {.smaller transition="slide"}
+
+```{r violin plot, warning=FALSE, eval=lEval, fig.cap='Violin plots of spin rates by pitch type',message=F, fig.show="hold"}
+res_trackman_violin <- dbSendQuery(conn = dcon, "
+SELECT AutoPitchType, SpinRate
+FROM trackman
+")
+trackman_violin <- dbFetch(res_trackman_violin, -1)
+dbClearResult(res_trackman_violin)
+
+trackman_violinplot <- ggplot(trackman_violin)+
+  aes(SpinRate, AutoPitchType,fill=AutoPitchType) + 
+  geom_violin(na.rm = TRUE) + 
+  labs(title="NCAA",
+       caption="Source: trackman",
+       x="Spin Rate",
+       y="Pitch Type") +
+  theme(legend.position = "none",plot.title = element_text(color="red"))
+
+rm(trackman_violin)
+rm(res_trackman_violin)
+
+res_yakkertech_violin <- dbSendQuery(conn = dcon, "
+SELECT SpinRate, AutoPitchType
+FROM yakkertech
+")
+yakkertech_violin <- dbFetch(res_yakkertech_violin, -1)
+dbClearResult(res_yakkertech_violin)
+
+yakkertech_violinplot <- ggplot(yakkertech_violin)+
+  aes(SpinRate, AutoPitchType,fill=AutoPitchType) + 
+  geom_violin(na.rm = TRUE) + 
+  labs(title="Frontier League",
+       caption="Source: yakkertech",
+       x="Spin Rate",
+       y="Pitch Type")+
+  theme(plot.title = element_text(color="blue"))
+
+rm(yakkertech_violin)
+rm(res_yakkertech_violin)
+
+grid.arrange(trackman_violinplot, yakkertech_violinplot, ncol=2,widths=c(0.85,1.15))
+```
+
+## Exit speeds by pitch type {.smaller transition="slide"}
+
+```{r exitspeeds by pitchtype,fig.cap="Box plots of exit speed by pitch type"}
+
+res_trackman_exitspeed_pitchtype <- dbSendQuery(conn = dcon, "SELECT AutoPitchType, ExitSpeed,PitchCall FROM trackman WHERE ExitSpeed != 'NA' AND PitchCall = 'InPlay'")
+trackman_exitspeed_pitchtype <- dbFetch(res_trackman_exitspeed_pitchtype, -1)
+dbClearResult(res_trackman_exitspeed_pitchtype)
+trackman_exitspeed_pitchtype$AutoPitchType <- as.factor(trackman_exitspeed_pitchtype$AutoPitchType)
+trackman_exitspeed_pitchtype$ExitSpeed <- as.numeric(trackman_exitspeed_pitchtype$ExitSpeed)
+boxplot1 <- ggplot(trackman_exitspeed_pitchtype, aes(x = AutoPitchType, y = ExitSpeed, fill = AutoPitchType)) +
+  geom_boxplot() +
+  scale_fill_manual(values = rainbow(length(unique(trackman_exitspeed_pitchtype$AutoPitchType)))) +
+  labs(title = "NCAA", x = "Pitch Type", y = "Exit Velocity") +
+  theme(legend.position='none',plot.title = element_text(color="red")) + 
+  ylim(5,110)
+
+res_yakkertech_exitspeed_pitchtype <- dbSendQuery(conn = dcon, "SELECT AutoPitchType, ExitSpeed,PitchCall FROM yakkertech WHERE ExitSpeed != 'NA' AND PitchCall = 'InPlay'")
+yakkertech_exitspeed_pitchtype <- dbFetch(res_yakkertech_exitspeed_pitchtype, -1)
+dbClearResult(res_yakkertech_exitspeed_pitchtype)
+yakkertech_exitspeed_pitchtype$AutoPitchType <- as.factor(yakkertech_exitspeed_pitchtype$AutoPitchType)
+yakkertech_exitspeed_pitchtype$ExitSpeed <- as.numeric(yakkertech_exitspeed_pitchtype$ExitSpeed)
+boxplot2 <- ggplot(yakkertech_exitspeed_pitchtype, aes(x = AutoPitchType, y = ExitSpeed, fill = AutoPitchType)) +
+  geom_boxplot() +
+  scale_fill_manual(values = rainbow(length(unique(yakkertech_exitspeed_pitchtype$AutoPitchType)))) +
+  labs(title = "Frontier League", x = "Pitch Type", y = "Exit Velocity") +
+  theme(legend.position='none',plot.title = element_text(color="blue")) + 
+  ylim(5,110)
+
+
+grid.arrange(boxplot1,boxplot2,ncol=2)
+```
+
+## Dead zones {.smaller transition="slide"}
+
+```{r,fig.cap="Avg Exit Speed by Pitch Speed Bin of deadzone fastballs and sinkers"}
+res_trackman_fastball_sinker <- dbSendQuery(conn = dcon, "
+SELECT AutoPitchType, RelSpeed, HorzBreak, InducedVertBreak, ExitSpeed, PitchCall
+FROM trackman
+WHERE AutoPitchType IN ('Fastball', 'Sinker') and PitchCall = 'InPlay'
+")
+trackman_fastball_sinker <- dbFetch(res_trackman_fastball_sinker, -1)
+dbClearResult(res_trackman_fastball_sinker)
+
+trackman_fastball_sinker$BreakDifference <- abs(abs(trackman_fastball_sinker$HorzBreak) - trackman_fastball_sinker$InducedVertBreak)
+
+trackman_fastball_sinker <- trackman_fastball_sinker %>% 
+  filter(BreakDifference <= 2)
+
+trackman_fastball_sinker$ExitSpeed <- as.numeric(trackman_fastball_sinker$ExitSpeed)
+
+
+trackman_fastball_sinker$SpeedBin <- cut(trackman_fastball_sinker$RelSpeed, breaks=c(87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97), labels=c("[87,87.99999]", "[88,88.99999]", "[89,89.99999]", "[90,90.99999]", "[91,91.99999]", "[92,92.99999]", "[93,93.99999]", "[94,94.99999]", "[95,95.99999]", "[96,96.99999]"), include.lowest=TRUE, right=FALSE)
+
+avg_exit_speed <- trackman_fastball_sinker %>%
+  group_by(SpeedBin) %>%
+  summarise(AverageExitSpeed = mean(ExitSpeed, na.rm=TRUE),
+            SampleSize = n())
+
+avg_exit_speed_trackman <- avg_exit_speed[1:10,]
+
+
+exitspeeds_trackman <- ggplot(avg_exit_speed_trackman, aes(x = SpeedBin, y = AverageExitSpeed)) +
+  geom_point(aes(color = SpeedBin, size = SampleSize), na.rm = TRUE) + 
+  labs(title = "NCAA",
+       x = "Pitch Speed Bin",
+       y = "Average Exit Speed (mph)", caption = "Source: trackman") +
+  scale_size_continuous(name = "Sample Size") +  
+  theme_minimal() + ylim(82,90) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position="none",
+        plot.title = element_text(color="red"))  
+
+res_yakkertech_fastball_sinker <- dbSendQuery(conn = dcon, "
+SELECT AutoPitchType, RelSpeed, HorzBreak, InducedVertBreak, ExitSpeed
+FROM yakkertech
+WHERE AutoPitchType IN ('Fastball', 'Sinker') and PitchCall = 'InPlay'
+")
+yakkertech_fastball_sinker <- dbFetch(res_yakkertech_fastball_sinker, -1)
+dbClearResult(res_yakkertech_fastball_sinker)
+
+yakkertech_fastball_sinker$BreakDifference <- abs(abs(yakkertech_fastball_sinker$HorzBreak) - yakkertech_fastball_sinker$InducedVertBreak)
+
+yakkertech_fastball_sinker <- yakkertech_fastball_sinker %>% 
+  filter(BreakDifference <= 2)
+
+
+yakkertech_fastball_sinker$ExitSpeed <- as.numeric(yakkertech_fastball_sinker$ExitSpeed)
+
+yakkertech_fastball_sinker$SpeedBin <- cut(yakkertech_fastball_sinker$RelSpeed, breaks=c(87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97), labels=c("[87,87.99999]", "[88,88.99999]", "[89,89.99999]", "[90,90.99999]", "[91,91.99999]", "[92,92.99999]", "[93,93.99999]", "[94,94.99999]", "[95,95.99999]", "[96,96.99999]"), include.lowest=TRUE, right=FALSE)
+
+avg_exit_speed <- yakkertech_fastball_sinker %>%
+  group_by(SpeedBin) %>%
+  summarise(AverageExitSpeed = mean(ExitSpeed, na.rm=TRUE),
+            SampleSize = n())
+
+avg_exit_speed_yakkertech <- avg_exit_speed[1:10,]
+
+exitspeeds_yakkertech <- ggplot(avg_exit_speed_yakkertech, aes(x = SpeedBin, y = AverageExitSpeed)) +
+  geom_point(aes(color = SpeedBin, size = SampleSize), na.rm = TRUE) + 
+  labs(title = "Frontier",
+       x = "Pitch Speed Bin",
+       y = "Average Exit Speed (mph)", caption = "Source: yakkertech") +
+  scale_size_continuous(name = "Sample Size") +  
+  theme_minimal() + ylim(82,90) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),plot.title = element_text(color="blue"),legend.justification = "top")
+
+grid.arrange(exitspeeds_trackman, exitspeeds_yakkertech, ncol=2,widths=c(0.85,1.15))
+```
+
+## Killer plot: Situational Pitch Type Run Values and Exit Speeds {transition="slide"}
+
+```{r setup, include=FALSE}
+final_trackman_results <- read.csv('~/Downloads/test8_final_trackman_results.csv')
+final_yakkertech_results <- read.csv('~/Downloads/test8_final_yakkertech_results.csv')
+
+reciprocal_decimal = function(x) {
+    int_part = floor(x)
+    dec_part = x - int_part
+    
+    if (dec_part > 0) {
+        reciprocal = 1 - dec_part
+        result = int_part + reciprocal
+    } else {
+        result = int_part
+    }
+    
+    return(result)
+}
+```
+
+::: columns
+::: {.column width="10%"}
+::: {style="font-size: 40%"}
+```{r inputs}
+selectInput("dropdown1", "Choose Ball Count:",
+                        choices = c("Any", "3", "2", "1", "0"))
+            selectInput("dropdown2", "Choose Strike Count:",
+                        choices = c("Any", "2", "1", "0")) 
+            selectInput("dropdown3", "Choose Pitcher Handedness:",
+                        choices = c("Any", "Left", "Right"))
+            selectInput("dropdown4", "Choose Pitch Type:",
+                        choices = c("Any", "Fastball", "Sinker", "Curveball", "Slider", "Splitter", "Changeup", "Cutter"))
+```
+
+:::
+:::
+
+::: {.column width="75%"}
+```{r plotoutput}
+plotOutput("distPlot", height = "650px")
+```
+:::
+
+
+
+```{r plotrender}
+#| context: server
+library(grid)
+set.seed(123)
+library(knitr)
+library(RSQLite)
+library(dplyr)
+library(lubridate)
+library(data.table)
+library(ggplot2)
+library(caTools)
+library(scales)
+
+output$distPlot <- renderPlot({
+  
+  
+  trackmandata <- final_trackman_results %>%
+    filter(Balls == as.character(input$dropdown1), 
+           Strikes == as.character(input$dropdown2), 
+           PitcherThrows == as.character(input$dropdown3), 
+           AutoPitchType == as.character(input$dropdown4))
+  
+  
+  yakkertechdata <- final_yakkertech_results %>%
+    filter(Balls == input$dropdown1, 
+           Strikes == input$dropdown2, 
+           PitcherThrows == input$dropdown3, 
+           AutoPitchType == input$dropdown4)
+  
+  diamond_vp <- viewport(width = 0.4, height = 0.5, just = c("left", "bottom"),angle=45)
+
+  pushViewport(diamond_vp)
+  
+  # Baseball diamond
+  grid.rect(x = unit(0, "npc"),
+          y = unit(0, "npc"),
+          width = unit(1, "npc"),
+          height = unit(1, "npc"),
+          gp = gpar(fill = "lightgreen"))
+  
+  # Home
+  grid.rect(x = unit(-0.5, "npc"), y = unit(-0.5, "npc"),
+          width = unit(0.1, "npc"), height = unit(0.1, "npc"),
+          gp = gpar(fill = "white"),
+          just=c("left", "bottom"))
+  
+  # 1B
+  grid.rect(x = unit(0.5, "npc"), y = unit(-0.5, "npc"),
+          width = unit(0.1, "npc"), height = unit(0.1, "npc"),
+          gp = gpar(fill = "white"),
+          just = c("right", "bottom"))
+  
+  
+  # 2B
+  grid.rect(x = unit(0.5, "npc"), y = unit(0.5, "npc"),
+          width = unit(0.1, "npc"), height = unit(0.1, "npc"),
+          gp = gpar(fill = "white"),
+          just=c("right", "top"))
+  
+  # 3B
+  grid.rect(x = unit(-0.5, "npc"), y = unit(0.5, "npc"),
+          width = unit(0.1, "npc"), height = unit(0.1, "npc"),
+          gp = gpar(fill = "white"),
+          just = c("left", "top"))
+  
+  
+  grid.circle(x = unit(0, "npc"),
+            y = unit(0, "npc"),
+            r = unit(0.1, "npc"),
+            gp = gpar(fill = "tan"))
+
+  rotated_vp <- viewport(x=0,y=-0.5,just = c("center", "bottom"))
+  pushViewport(rotated_vp)
+  if (trackmandata$AvgRunValue != 0 & !is.na(trackmandata$AvgRunValue)){
+
+    if (trackmandata$AvgRunValue >= 0 & trackmandata$AvgRunValue < 1) {
+      grid.circle(x = unit(trackmandata$AvgRunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+        grid.text(x = unit(trackmandata$AvgRunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(trackmandata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$AvgRunValue >= 1 & trackmandata$AvgRunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(trackmandata$AvgRunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(trackmandata$AvgRunValue - 1, "npc"),
+                  label = paste0(round(trackmandata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$AvgRunValue >= 2 & trackmandata$AvgRunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(trackmandata$AvgRunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(reciprocal_decimal(trackmandata$AvgRunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(trackmandata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$AvgRunValue >= 3 & trackmandata$AvgRunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(trackmandata$AvgRunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(trackmandata$AvgRunValue) - 3, "npc"),
+                  label = paste0(round(trackmandata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+  }
+  if (trackmandata$std1RunValue != 0 & !is.na(trackmandata$std1RunValue)){
+    # Standard dev + 1
+    if (trackmandata$std1RunValue >= 0 & trackmandata$std1RunValue < 1) {
+      grid.circle(x = unit(trackmandata$std1RunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+        grid.text(x = unit(trackmandata$std1RunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(trackmandata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std1RunValue >= 1 & trackmandata$std1RunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(trackmandata$std1RunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(trackmandata$std1RunValue - 1, "npc"),
+                  label = paste0(round(trackmandata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std1RunValue >= 2 & trackmandata$std1RunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(trackmandata$std1RunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(reciprocal_decimal(trackmandata$std1RunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(trackmandata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std1RunValue >= 3 & trackmandata$std1RunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(trackmandata$std1RunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(trackmandata$std1RunValue) - 3, "npc"),
+                  label = paste0(round(trackmandata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+  }
+  # Standard dev + 2
+  if (trackmandata$std2RunValue != 0 & !is.na(trackmandata$std2RunValue)){
+    if (trackmandata$std2RunValue >= 0 & trackmandata$std2RunValue < 1) {
+      grid.circle(x = unit(trackmandata$std2RunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+        grid.text(x = unit(trackmandata$std2RunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(trackmandata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std2RunValue >= 1 & trackmandata$std2RunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(trackmandata$std2RunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(trackmandata$std2RunValue - 1, "npc"),
+                  label = paste0(round(trackmandata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std2RunValue >= 2 & trackmandata$std2RunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(trackmandata$std2RunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(reciprocal_decimal(trackmandata$std2RunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(trackmandata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+    if (trackmandata$std2RunValue >= 3 & trackmandata$std2RunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(trackmandata$std2RunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "red"))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(trackmandata$std2RunValue) - 3, "npc"),
+                  label = paste0(round(trackmandata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10))
+    }
+  }
+  # Yakkertech:
+  if (yakkertechdata$AvgRunValue != 0 & !is.na(yakkertechdata$AvgRunValue)){
+    if (yakkertechdata$AvgRunValue >= 0 & yakkertechdata$AvgRunValue < 1) {
+      grid.circle(x = unit(yakkertechdata$AvgRunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+        grid.text(x = unit(yakkertechdata$AvgRunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(yakkertechdata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$AvgRunValue >= 1 & yakkertechdata$AvgRunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(yakkertechdata$AvgRunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(yakkertechdata$AvgRunValue - 1, "npc"),
+                  label = paste0(round(yakkertechdata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$AvgRunValue >= 2 & yakkertechdata$AvgRunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(yakkertechdata$AvgRunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(reciprocal_decimal(yakkertechdata$AvgRunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(yakkertechdata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$AvgRunValue >= 3 & yakkertechdata$AvgRunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$AvgRunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$AvgRunValue) - 3, "npc"),
+                  label = paste0(round(yakkertechdata$AvgRunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+  }
+  # Standard dev + 1
+  if (yakkertechdata$std1RunValue != 0 & !is.na(yakkertechdata$std1RunValue)){
+    if (yakkertechdata$std1RunValue >= 0 & yakkertechdata$std1RunValue < 1) {
+      grid.circle(x = unit(yakkertechdata$std1RunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+        grid.text(x = unit(yakkertechdata$std1RunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(yakkertechdata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$std1RunValue >= 1 & yakkertechdata$std1RunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(yakkertechdata$std1RunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(yakkertechdata$std1RunValue - 1, "npc"),
+                  label = paste0(round(yakkertechdata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$std1RunValue >= 2 & yakkertechdata$std1RunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(yakkertechdata$std1RunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(reciprocal_decimal(yakkertechdata$std1RunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(yakkertechdata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$std1RunValue >= 3 & yakkertechdata$std1RunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$std1RunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$std1RunValue) - 3, "npc"),
+                  label = paste0(round(yakkertechdata$std1RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+  }
+  # Standard dev + 2
+  if (yakkertechdata$std2RunValue != 0 & !is.na(yakkertechdata$std2RunValue)){
+    if (yakkertechdata$std2RunValue >= 0 & yakkertechdata$std2RunValue < 1) {
+      grid.circle(x = unit(yakkertechdata$std2RunValue, "npc"),
+                  y = unit(0, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+        grid.text(x = unit(yakkertechdata$std2RunValue,"npc"),
+                  y = unit(0, "npc"),
+                  label = paste0(round(yakkertechdata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$std2RunValue >= 1 & yakkertechdata$std2RunValue < 2) {
+      grid.circle(x = unit(1, "npc"),
+                  y = unit(yakkertechdata$std2RunValue - 1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(1,"npc"),
+                  y = unit(yakkertechdata$std2RunValue - 1, "npc"),
+                  label = paste0(round(yakkertechdata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+  
+    if (yakkertechdata$std2RunValue >= 2 & yakkertechdata$std2RunValue < 3) {
+      grid.circle(x = unit(reciprocal_decimal(yakkertechdata$std2RunValue) - 2, "npc"),
+                  y = unit(1, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(reciprocal_decimal(yakkertechdata$std2RunValue) - 2,"npc"),
+                  y = unit(1, "npc"),
+                  label = paste0(round(yakkertechdata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+    if (yakkertechdata$std2RunValue >= 3 & yakkertechdata$std2RunValue < 4) {
+      grid.circle(x = unit(0, "npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$std2RunValue) - 3, "npc"),
+                  r = unit(0.06, "npc"),
+                  gp = gpar(fill = "blue", alpha = 0.65))
+      
+        grid.text(x = unit(0,"npc"),
+                  y = unit(reciprocal_decimal(yakkertechdata$std2RunValue) - 3, "npc"),
+                  label = paste0(round(yakkertechdata$std2RunValue,3)),
+                  gp = gpar(fontsize = 10,col="white"))
+    }
+  }
+  
+  
+  popViewport()
+  
+  outfield_vp <- viewport(x=0.62,y=0.62,width = 1, height = 1, just = c("center", "center"),angle=-45)
+  pushViewport(outfield_vp)
+  
+  grid.text(x = unit(0.5, "npc"), y = unit(0.61, "npc"), label = "Exit Speeds", gp = gpar(fontsize = 14))
+  
+  grid.lines(x = unit(c(0, 1), "npc"), y = unit(c(0.52, 0.52), "npc"), gp = gpar(col = "black", lwd = 2))  # Trackman line
+  grid.lines(x = unit(c(0, 1), "npc"), y = unit(c(0.4, 0.4), "npc"), gp = gpar(col = "black", lwd = 2))  # Yakkertech line
+  
+  max_speed_global <- max(max(trackmandata$AvgExitSpeed, na.rm = TRUE), max(yakkertechdata$AvgExitSpeed, na.rm = TRUE))
+  
+  position_on_outfield_line <- function(speed, max_speed = max_speed_global) {
+    return(speed / max_speed)
+  }
+  
+  for (i in 1:nrow(trackmandata)) {
+    trackman_speeds <- trackmandata[i, c("AvgExitSpeed", "StdNeg2ExitSpeed", "StdNeg1ExitSpeed", "Std1ExitSpeed", "Std2ExitSpeed")]
+    trackman_positions <- sapply(trackman_speeds, position_on_outfield_line)
+    for (j in 1:length(trackman_positions)) {
+      grid.circle(x = unit(trackman_positions[j]-0.5, "npc"), y = unit(0.52, "npc"), r = unit(0.05, "npc"), gp = gpar(fill = "red"))
+      grid.text(x = unit(trackman_positions[j]-0.5, "npc"), y = unit(0.52, "npc"), label = sprintf("%.1f", trackman_speeds[j]), gp = gpar(col = "white", fontsize = 10))
+    }
+  
+    yakkertech_speeds <- yakkertechdata[i, c("AvgExitSpeed", "StdNeg2ExitSpeed", "StdNeg1ExitSpeed", "Std1ExitSpeed", "Std2ExitSpeed")]
+    yakkertech_positions <- sapply(yakkertech_speeds, position_on_outfield_line)
+    for (j in 1:length(yakkertech_positions)) {
+      grid.circle(x = unit(yakkertech_positions[j]-0.5, "npc"), y = unit(0.4, "npc"), r = unit(0.05, "npc"), gp = gpar(fill = "blue", alpha = 0.65))
+      grid.text(x = unit(yakkertech_positions[j]-0.5, "npc"), y = unit(0.4, "npc"), label = sprintf("%.1f", yakkertech_speeds[j]), gp = gpar(col = "white", fontsize = 10))
+    }
+  }
+
+  popViewport()
+  legend(x=0.7,y=0.2, legend = c("NCAA", "Frontier League"), fill = c("red", "blue"), bty = "o", cex = 1)
+  
+  })
+
+
+```
+
+
+::: {.column width="15%"}
+```{r}
+div(style = "text-align: left; margin-top: 20px; font-size: 30px;", textOutput("choice1"))
+div(style = "text-align: left; margin-top: 50px; font-size: 30px;", textOutput("choice2"))
+
+```
+:::
+:::
+
+```{r}
+#| context: server
+
+    output$choice1 <- renderText({
+  trackmandata <- final_trackman_results %>%
+    filter(Balls == as.character(input$dropdown1), 
+           Strikes == as.character(input$dropdown2), 
+           PitcherThrows == as.character(input$dropdown3), 
+           AutoPitchType == as.character(input$dropdown4))
+  percentageValue <- round(trackmandata$SampleSize_runvalue / 171957 * 100,1)
+  paste0("% of total balls in play (NCAA): ",percentageValue, "%")
+})
+
+output$choice2 <- renderText({
+  
+  yakkertechdata <- final_yakkertech_results %>%
+    filter(Balls == input$dropdown1, 
+           Strikes == input$dropdown2, 
+           PitcherThrows == input$dropdown3, 
+           AutoPitchType == input$dropdown4)
+  percentageValue2 <- round(yakkertechdata$SampleSize_runvalue / 21608 * 100,1)
+    paste0("% of total balls in play (Frontier League): ",percentageValue2, "%")
+})
+
+
+```
+
+## [NCAA]{style="color:red;"} impact of release speed on run values of hits {.smaller transition="slide"}
+
+```{r,include=FALSE}
+yakker2 <- dbGetQuery(dcon, "SELECT PitcherThrows,InducedVertBreak,HorzBreak, RelSpeed,AutoPitchType,ExitSpeed,SpinRate,PitchCall,PlayResult
+                      FROM yakkertech
+                      WHERE ExitSpeed != 'NA' AND PitchCall = 'InPlay'")
+trackman2 <- dbGetQuery(dcon, "SELECT PitcherThrows,InducedVertBreak,HorzBreak, RelSpeed,AutoPitchType,ExitSpeed,SpinRate,PlayResult,PitchCall
+                      FROM trackman
+                        WHERE ExitSpeed != 'NA' AND PitchCall = 'InPlay'")
+
+process_data <- function(data) {
+  data %>%
+    filter(PlayResult %in% c('Out', 'Single', 'Double', 'Triple', 'Home Run', 'Error', 'FieldersChoice', 'Sacrifice') & 
+           PitchCall == 'InPlay' & 
+           PitcherThrows != "Both") %>%
+    mutate(
+      RunValue = case_when(
+        PlayResult %in% c('Out', 'Error', 'Sacrifice', 'FieldersChoice') ~ 0,
+        PlayResult == 'Single' ~ 1,
+        PlayResult == 'Double' ~ 2,
+        PlayResult == 'Triple' ~ 3,
+        PlayResult == 'Home Run' ~ 4
+      ),
+      ExitSpeed = as.numeric(ExitSpeed)
+    ) %>%
+    filter(!is.na(ExitSpeed)) # Ensure that records with NA ExitSpeed are excluded
+}
+sluggingtrackman <- process_data(trackman2)
+sluggingyakkertech <- process_data(yakker2)
+
+# Fastball, Changeup, curveball, sinker, slider
+# Want to do: Vert break (all pitchers) vs exit speed across pitch types
+yakker2_f <- sluggingyakkertech %>% subset(AutoPitchType == 'Fastball')
+yakker2_cu <- sluggingyakkertech %>% subset(AutoPitchType == 'Curveball')
+yakker2_si <- sluggingyakkertech %>% subset(AutoPitchType == 'Sinker')
+yakker2_sl <- sluggingyakkertech %>% subset(AutoPitchType == 'Slider')
+yakker2_ch <- sluggingyakkertech %>% subset(AutoPitchType == 'Changeup')
+trackman2_f <- sluggingtrackman %>% subset(AutoPitchType == 'Fastball')
+trackman2_cu <- sluggingtrackman %>% subset(AutoPitchType == 'Curveball')
+trackman2_si <- sluggingtrackman %>% subset(AutoPitchType == 'Sinker')
+trackman2_sl <- sluggingtrackman %>% subset(AutoPitchType == 'Slider')
+trackman2_ch <- sluggingtrackman %>% subset(AutoPitchType == 'Changeup')
+
+model1 <- lm(RunValue ~ RelSpeed-1,data=trackman2_f)
+model2 <- lm(RunValue ~ RelSpeed-1,data=trackman2_cu)
+model3 <- lm(RunValue ~ RelSpeed-1,data=trackman2_sl)
+model4 <- lm(RunValue ~ RelSpeed-1,data=trackman2_ch)
+model5 <- lm(RunValue ~ RelSpeed-1,data=trackman2_si)
+
+model6 <- lm(RunValue ~ RelSpeed-1,data=yakker2_f)
+model7 <- lm(RunValue ~ RelSpeed-1,data=yakker2_cu)
+model8 <- lm(RunValue ~ RelSpeed-1,data=yakker2_sl)
+model9 <- lm(RunValue ~ RelSpeed-1,data=yakker2_ch)
+model10 <- lm(RunValue ~ RelSpeed-1,data=yakker2_si)
+```
+
+```{r,warning=FALSE,message=FALSE,out.width="50%"}
+stargazer(model1,model2,model3,model4,model5,type="text",title="NCAA - Pitch Speed & Run value",
+          header=FALSE,omit.stat = c("f","ser"),column.labels=c("Fastball","Curveball","Slider","Changeup","Sinker"))
+```
+
+## [Frontier]{style="color:blue;"} impact of release speed on run value of hits {.smaller transition="slide"}
+
+```{r,warning=FALSE,message=FALSE,out.width="50%"}
+stargazer(model6,model7,model8,model9,model10,type="text",title="Frontier - Pitch speed & Run value",
+          header=FALSE,omit.stat = c("f","ser"),column.labels=c("Fastball","Curveball","Slider","Changeup","Sinker"))
+```
+
+## Conclusion {.smaller transition="slide"}
+
+::: {.fragment .fade-in}
+-   The leagues are very similar in terms of pitch metrics and exit speeds of hits
+:::
+::: {.fragment .fade-in}
+-   Trying to predict outcomes like exit velocities and run values of individual pitches is hard because the data is noisy
+:::
+::: {.fragment .fade-in}
+-   [Frontier League]{style="color:blue;"} relievers/closers seem to throw more fastballs/sinkers and throw harder than [Frontier League]{style="color:blue;"} starters
+:::
+::: {.fragment .fade-in}
+-   Trackman is a more accurate tracking system than Yakkertech
+:::
+::: {.fragment .fade-in}
+-   [NCAA]{style="color:red"} hitters are better at hitting fastballs, cutters, and MLB-level deadzone pitches than [Frontier League]{style="color:blue;"} hitters
+:::
+::: {.fragment .fade-in}
+-   In future analyses it would be useful to compare against top-tier leagues like MLB or Japan's NPB
+:::
+::: {.fragment .fade-in}
+-   It would also be useful to compare against other pitch tracking systems like Rapsodo to see if variation is due to differing measurement systems
+:::
