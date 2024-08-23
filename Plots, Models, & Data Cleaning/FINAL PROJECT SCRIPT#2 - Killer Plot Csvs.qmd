@@ -1,0 +1,126 @@
+---
+title: "Killer Plot CSV creation"
+subtitle: "Baseball Analysis"
+format:
+ pdf: default
+---
+
+```{r setup, include=FALSE}
+library(grid)
+set.seed(123)
+library(knitr)
+library(RSQLite)
+library(dplyr)
+library(lubridate)
+library(data.table)
+library(ggplot2)
+library(stargazer)
+library(kableExtra)
+library(vroom)
+library(randomForest)
+library(caTools)
+library(scales)
+library(stringr)
+library(DBI)
+
+process_data <- function(data) {
+  data %>%
+    filter(PlayResult %in% c('Out', 'Single', 'Double', 'Triple', 'Home Run', 'Error', 'FieldersChoice', 'Sacrifice') & 
+           PitchCall == 'InPlay' & 
+           PitcherThrows != "Both") %>%
+    mutate(
+      RunValue = case_when(
+        PlayResult %in% c('Out', 'Error', 'Sacrifice', 'FieldersChoice') ~ 0,
+        PlayResult == 'Single' ~ 1,
+        PlayResult == 'Double' ~ 2,
+        PlayResult == 'Triple' ~ 3,
+        PlayResult == 'Home Run' ~ 4
+      ),
+      ExitSpeed = as.numeric(ExitSpeed)
+    ) %>%
+    filter(!is.na(ExitSpeed))
+}
+
+database_path <- "/Users/zacambrose/Downloads/baseball.db"  
+
+baseball_db <- dbConnect(RSQLite::SQLite(), dbname = database_path)
+
+trackmantest <- dbGetQuery(baseball_db, "SELECT * FROM trackman")
+sluggingtrackman <- process_data(trackmantest)
+yakkertest <- dbGetQuery(baseball_db, "SELECT * FROM yakkertech")
+sluggingyakker <- process_data(yakkertest)
+
+filter_data <- function(data, combo) {
+  if (!is.na(combo$Balls) && combo$Balls != "Any") {
+    data <- data[data$Balls == combo$Balls, ]
+  }
+  if (!is.na(combo$Strikes) && combo$Strikes != "Any") {
+    data <- data[data$Strikes == combo$Strikes, ]
+  }
+  if (combo$AutoPitchType == "Any") {
+    data <- data[!is.na(data$AutoPitchType) & data$AutoPitchType != "Other", ]
+  } else if (!is.na(combo$AutoPitchType)) {
+    data <- data[data$AutoPitchType == combo$AutoPitchType, ]
+  }
+  if (!is.na(combo$PitcherThrows) && combo$PitcherThrows != "Any") {
+    data <- data[data$PitcherThrows == combo$PitcherThrows, ]
+  }
+  return(data)
+}
+
+process_and_combine_results <- function(data, combinations) {
+  results <- lapply(1:nrow(combinations), function(i) {
+    combo <- combinations[i, ]
+    filtered_data <- filter_data(data, combo)
+    avg_speed <- mean(filtered_data$ExitSpeed, na.rm = TRUE)
+    sd_speed <- sd(filtered_data$ExitSpeed, na.rm = TRUE)
+    avg_run_value <- mean(filtered_data$RunValue, na.rm = TRUE)
+    sd_run_value <- sd(filtered_data$RunValue, na.rm = TRUE)
+    data.frame(
+      Balls = combo$Balls,
+      Strikes = combo$Strikes,
+      AutoPitchType = combo$AutoPitchType,
+      PitcherThrows = combo$PitcherThrows,
+      SampleSize_runvalue = sum(!is.na(filtered_data$RunValue)),
+      SampleSize_exitspeed = sum(!is.na(filtered_data$ExitSpeed)),
+      AvgRunValue = avg_run_value,
+      SDRunValue = sd_run_value,
+      std1RunValue = avg_run_value + sd_run_value,
+      std2RunValue = avg_run_value + 2 * sd_run_value,
+      AvgExitSpeed = avg_speed,
+      SD = sd_speed,
+      StdNeg2ExitSpeed = avg_speed - 2 * sd_speed,
+      StdNeg1ExitSpeed = avg_speed - sd_speed,
+      Std1ExitSpeed = avg_speed + sd_speed,
+      Std2ExitSpeed = avg_speed + 2 * sd_speed
+    )
+  })
+
+  final_results <- do.call(rbind, results)
+  return(final_results)
+}
+
+combinations_trackman <- expand.grid(
+  Balls = c(unique(sluggingtrackman$Balls), "Any"),
+  Strikes = c(unique(sluggingtrackman$Strikes), "Any"),
+  AutoPitchType = c("Any", na.omit(unique(sluggingtrackman$AutoPitchType))),
+  PitcherThrows = c(unique(sluggingtrackman$PitcherThrows), "Any")
+)
+
+combinations_yakker <- expand.grid(
+  Balls = c(unique(sluggingyakker$Balls), "Any"),
+  Strikes = c(unique(sluggingyakker$Strikes), "Any"),
+  AutoPitchType = c("Any", na.omit(unique(sluggingyakker$AutoPitchType))),
+  PitcherThrows = c(unique(sluggingyakker$PitcherThrows), "Any")
+)
+
+final_trackman_results <- process_and_combine_results(sluggingtrackman, combinations_trackman)
+final_yakkertech_results <- process_and_combine_results(sluggingyakker, combinations_yakker)
+
+final_trackman_results <- final_trackman_results[!is.na(final_trackman_results$AutoPitchType) & final_trackman_results$AutoPitchType != "Other", ]
+final_yakkertech_results <- final_yakkertech_results[!is.na(final_yakkertech_results$AutoPitchType) & final_yakkertech_results$AutoPitchType != "Other", ]
+
+write.csv(final_trackman_results, file = "~/test8_final_trackman_results.csv")
+write.csv(final_yakkertech_results, file = "~/test8_final_yakkertech_results.csv")
+```
+

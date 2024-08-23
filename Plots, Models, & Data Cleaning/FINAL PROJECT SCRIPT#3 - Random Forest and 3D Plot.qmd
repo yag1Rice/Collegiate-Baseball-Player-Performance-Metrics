@@ -1,0 +1,144 @@
+---
+title: "3D Plot and Random Forest Code"
+subtitle: "Baseball Analysis"
+format:
+ pdf: default
+---
+```{r setup}
+set.seed(123)
+library(data.table)
+library(ggplot2)
+library(stargazer)
+library(dplyr)
+library(kableExtra)
+library(vroom)
+library(lubridate)
+library(plotly)
+library(gridExtra)
+library(randomForest)
+library(caTools)
+library(caret)
+library(e1071)
+
+trackman <- fread('/Users/zacambrose/Downloads/trackman_d1_2023.csv')
+
+filter_values <- c(",", "Other", "Undefined",""," ",NA,"NA")
+replace_values <- c("Four-Seam", "FourSeamFastBall", "OneSeamFastBall")
+
+trackman <- trackman[!trackman$TaggedPitchType %in% filter_values, ]
+trackman$TaggedPitchType[trackman$TaggedPitchType %in% replace_values] <- "Fastball"
+trackman$TaggedPitchType[trackman$TaggedPitchType == "TwoSeamFastBall"] <- "Sinker"
+trackman$TaggedPitchType[trackman$TaggedPitchType == "ChangeUp"] <- "Changeup"
+
+
+
+trackman <- trackman %>% subset(RelSpeed > 60)
+trackman <- trackman %>% subset(SpinRate < 3700)
+trackman <- trackman %>% subset(AutoPitchType != '')
+
+
+trackman_subset <- trackman %>% select(PitchNo,Date,Time,PitcherTeam,Inning,Outs,Balls,Strikes,
+                                       KorBB,PlayResult,
+                                       Pitcher,PitcherId,PitcherThrows,
+                                       AutoPitchType,RelSpeed,SpinRate,SpinAxis, Tilt,
+                                       InducedVertBreak,HorzBreak) %>% 
+  na.omit()
+
+
+trackman_subset <- trackman_subset %>% subset(PitcherThrows == 'Right' | PitcherThrows == 'Left')
+trackman_subset$PitcherThrows <- as.factor(trackman_subset$PitcherThrows)
+trackman_subset$AutoPitchType <- as.factor(trackman_subset$AutoPitchType)
+
+features <- trackman_subset[, c('RelSpeed', 'SpinRate', 'SpinAxis', 'InducedVertBreak', 'HorzBreak', 'PitcherThrows')]
+target <- trackman_subset$AutoPitchType
+
+split <- sample.split(target, SplitRatio = 0.8)
+train_features <- subset(features, split == TRUE)
+test_features <- subset(features, split == FALSE)
+train_target <- subset(target, split == TRUE)
+test_target <- subset(target, split == FALSE)
+
+train_control <- trainControl(
+  method = "repeatedcv",
+  number = 10,            
+  repeats = 3,            
+  search = "grid"          
+)
+
+hyper_grid <- expand.grid(
+  mtry = seq(2, 6, by = 1)       
+)
+
+rf_model <- randomForest(x = train_features, y = train_target, ntree=10,mtry=3)
+
+predictions <- predict(rf_model, test_features)
+
+confusion_matrix <- table(test_target, predictions)
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+print(confusion_matrix)
+
+
+yakkertech <- fread('/Users/zacambrose/yakkertech_frontierleague_2023.csv') %>% 
+  select(PitchNo,Date,Time,Inning,PitcherId,BatterId,BatterSide,Outs,Balls,Strikes,PitchCall,
+         PitcherThrows,RelSpeed, SpinRate, SpinAxis, RelHeight, InducedVertBreak, HorzBreak,TaggedPitchType,
+         HitType,PlayResult,Extension,PlateLocHeight,PlateLocSide,ExitSpeed,Angle,Distance,HangTime)
+
+
+yakkertech <- yakkertech %>% subset(PitcherThrows == 'Right' | PitcherThrows == 'Left')
+yakkertech$PitcherThrows <- as.factor(yakkertech$PitcherThrows)
+
+yakkertech <- yakkertech %>% 
+  subset(RelSpeed > 60 & RelSpeed < 110)
+yakkertech <- yakkertech %>% 
+  subset(SpinRate < 3700)
+yakkertech <- yakkertech %>% 
+  subset(HorzBreak < 50 & HorzBreak > -50)
+yakkertech <- yakkertech %>% 
+  subset(InducedVertBreak < 50 & InducedVertBreak > -50)
+
+
+new_features_yakkertech <- yakkertech[, c('RelSpeed', 'SpinRate', 'SpinAxis', 'InducedVertBreak', 'HorzBreak', 'PitcherThrows')]
+
+predicted_AutoPitchType_yakkertech <- predict(rf_model, new_features_yakkertech)
+
+yakkertech$AutoPitchType <- predicted_AutoPitchType_yakkertech
+
+table(yakkertech$AutoPitchType)
+
+dcon <- dbConnect(SQLite(), dbname = "/Users/zacambrose/STAT_405_Module1/baseball.db")
+yakker_sample <- dbGetQuery(dcon, "SELECT * FROM yakkertech WHERE RelSpeed > 60 AND RelSpeed < 110 AND SpinRate < 3700
+                            AND HorzBreak > -50 AND HorzBreak < 50 AND InducedVertBreak > -50 AND InducedVertBreak < 50 
+                            LIMIT 20000")
+horzbreak_y <- yakker_sample$HorzBreak
+ivb_y <- yakker_sample$InducedVertBreak
+vb_y <- yakker_sample$VertBreak
+spinaxis_y <- yakker_sample$SpinAxis
+apt_y <- yakker_sample$AutoPitchType
+velo_y <- yakker_sample$RelSpeed
+
+p3 <- plot_ly(x=horzbreak_y,y=ivb_y,z=spinaxis_y,color=apt_y,alpha=1,size=I(60)) %>% 
+  layout(title="Pitch Break",scene = list(xaxis = list(title = 'Horz Break'),
+                                          yaxis = list(title = 'Induced Vert Break'),
+                                          zaxis = list(title = 'Spin Axis')))
+p3
+
+htmlwidgets::saveWidget(as.widget(p3), "temp_plot.html", selfcontained = TRUE)
+browseURL("temp_plot.html")
+
+trackman_sample <- dbGetQuery(dcon, "SELECT * FROM trackman WHERE RelSpeed > 60 AND RelSpeed < 110 AND SpinRate < 3700
+                            AND HorzBreak > -50 AND HorzBreak < 50 AND InducedVertBreak > -50 AND InducedVertBreak < 50 
+                            LIMIT 20000")
+horzbreak_t <- trackman_sample$HorzBreak
+ivb_t <- trackman_sample$InducedVertBreak
+vb_t <- trackman_sample$VertBreak
+spinaxis_t <- trackman_sample$SpinAxis
+apt_t <- trackman_sample$AutoPitchType
+velo_t <- trackman_sample$RelSpeed
+
+p4 <- plot_ly(x=horzbreak_t,y=ivb_t,z=spinaxis_t,color=apt_t,alpha=1,size=I(60)) %>% 
+  layout(title="Trackman Pitch Break",scene = list(xaxis = list(title = 'Horz Break'),
+                                          yaxis = list(title = 'Induced Vert Break'),
+                                          zaxis = list(title = 'Spin Axis')))
+p4
+```
