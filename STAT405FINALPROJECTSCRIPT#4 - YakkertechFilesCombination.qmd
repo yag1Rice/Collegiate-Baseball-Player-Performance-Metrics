@@ -1,0 +1,74 @@
+---
+title: "YakkertechDataCreation"
+format: pdf
+---
+This code works assuming each team's season of data is in a separate folder in one large container folder. It will combine all the data into one dataframe, and then remove any duplicate rows. It will also add a column to indicate which team's data was used for each row. This is useful for when we want to compare Yakkertech data to Trackman data, and we want to make sure we're only comparing data from the same team.
+```{r data loading yakkertech,warning=FALSE}
+bind_csv_rows <- function(folder_path) {
+  csv_files <- list.files(folder_path, pattern = "\\.csv$", full.names = TRUE)
+  final_df <- data.frame()
+  for (file_path in csv_files) {
+    csv_data <- read.csv(file_path)
+    final_df <- rbind(final_df, csv_data)
+  }
+  final_df$GameID <- as.character(final_df$GameID)
+  final_df$Date <- as.Date(final_df$Date, format = "%Y-%m-%d")
+  final_df$Time <- as.ITime(final_df$Time)
+  
+  final_df <- final_df %>%
+    arrange(Date, Time)
+  return(final_df)
+}
+
+
+washington_wild_things <- bind_csv_rows('/Users/zacambrose/Downloads/Washington Wild Things')
+ottawa_titans <- bind_csv_rows('/Users/zacambrose/Downloads/Ottawa Titans')
+empire_state_greys <- bind_csv_rows('/Users/zacambrose/Downloads/Empire State Greys')
+sussex_county_miners <- bind_csv_rows('/Users/zacambrose/Downloads/Sussex County Miners 2')
+lake_erie_crushers <- bind_csv_rows('/Users/zacambrose/Downloads/Lake Erie Crushers')
+joliet_slammers <- bind_csv_rows('/Users/zacambrose/Downloads/Joliet Slammers')
+gateway_grizzlies <- bind_csv_rows('/Users/zacambrose/Downloads/Gateway Grizzlies 2')
+tricity_valleycats <- bind_csv_rows('/Users/zacambrose/Downloads/TriCity ValleyCats')
+troisrivieres_aigles <- bind_csv_rows('/Users/zacambrose/Downloads/TroisRivieres Aigles 2')
+schaumburg_boomers <- bind_csv_rows('/Users/zacambrose/Downloads/Schaumburg Boomers')
+windy_city_thunderbolts <- bind_csv_rows('/Users/zacambrose/Downloads/Windy City Thunderbolts')
+new_jersey_jackals <- bind_csv_rows('/Users/zacambrose/Downloads/New Jersey Jackals')
+new_york_boulders <- bind_csv_rows('/Users/zacambrose/Downloads/New York Boulders')
+florence_yalls <- bind_csv_rows('/Users/zacambrose/Downloads/Florence Y_alls')
+evansville_otters <- bind_csv_rows('/Users/zacambrose/Downloads/Evansville Otters')
+
+
+bind_rows_conditionally <- function(df_list) {
+  merged_df <- bind_rows(df_list, .id="TeamDataSource")
+  
+  first_team_source <- merged_df %>%
+    group_by(GameID) %>%
+    summarise(FirstTeamSource = first(TeamDataSource))
+  
+  merged_df <- left_join(merged_df, first_team_source, by = "GameID")
+  
+  merged_df <- merged_df %>%
+    filter(TeamDataSource == FirstTeamSource) %>%
+    select(-FirstTeamSource)
+  
+  return(merged_df)
+}
+
+
+all_teams <- list(washington_wild_things,
+               ottawa_titans,
+               empire_state_greys,
+               sussex_county_miners,
+               lake_erie_crushers,
+               joliet_slammers,
+               gateway_grizzlies,
+               tricity_valleycats,
+               troisrivieres_aigles,
+               schaumburg_boomers,
+               windy_city_thunderbolts,
+               new_jersey_jackals,
+               new_york_boulders,
+               florence_yalls,
+               evansville_otters)
+yakkertech <- bind_rows_conditionally(all_teams)
+```
